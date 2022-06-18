@@ -15,4 +15,9 @@
 #
 
 PRODUCT_MAKEFILES := \
-    $(LOCAL_DIR)/lineage_RMX3151.mk
+    $(LOCAL_DIR)/komodo_RMX3151.mk
+
+COMMON_LUNCH_CHOICES := \
+        komodo_RMX3151-eng \
+        komodo_RMX3151-user \
+        komodo_RMX3151-userdebug

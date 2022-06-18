@@ -1,0 +1,173 @@
+on init
+    mount none /vendor/lost+found /vendor/overlay bind
+    setprop sys.usb.ffs.aio_compat 1
+    setprop persist.vendor.vilte_support 0
+
+    # Boot time fs tune
+    write /sys/block/sda/queue/iostats 0
+    write /sys/block/sda/queue/scheduler cfq
+    write /sys/block/sda/queue/iosched/slice_idle 0
+    write /sys/block/sda/queue/read_ahead_kb 2048
+    write /sys/block/sda/queue/nr_requests 256
+    write /sys/block/sdb/queue/iostats 0
+    write /sys/block/sdb/queue/scheduler cfq
+    write /sys/block/sdb/queue/iosched/slice_idle 0
+    write /sys/block/sdb/queue/read_ahead_kb 2048
+    write /sys/block/sdb/queue/nr_requests 256
+    write /sys/block/sdc/queue/iostats 0
+    write /sys/block/sdc/queue/scheduler cfq
+    write /sys/block/sdc/queue/iosched/slice_idle 0
+    write /sys/block/sdc/queue/read_ahead_kb 2048
+    write /sys/block/sdc/queue/nr_requests 256
+    write /sys/block/dm-0/queue/read_ahead_kb 2048
+    write /sys/block/dm-1/queue/read_ahead_kb 2048
+
+    # Custom overrides that need to happen right on boot
+    # Override vendor fstab
+    # We only need it to be overridden before things are mounted
+    mount none /system/etc/fstab.mt6781 /vendor/etc/fstab.mt6781 bind
+
+on fs
+    mount_all /vendor/etc/fstab.mt6781 --early
+    mount_all /vendor/etc/fstab.mt6781 --late
+
+on post-fs
+    # Unmount the overridden fstab because the SELinux label is incorrect
+    # and some MTK daemons can crash because of that
+    # (at post-fs, the fstab has already been used to mount the partitions,
+    #  so it is fine to just revert back)
+    umount /vendor/etc/fstab.mt6781
+
+on property:sys.boot_completed=1
+    # ZRAM
+    swapon_all /vendor/fstab.enableswap
+    # Restrict permissions to socket file 
+    # to hide Magisk & co.
+    chmod 440 /proc/net/unix
+
+on late-fs
+
+on property:init.svc.face_hal=restarting
+    stop face_hal
+
+on post-fs-data
+    # VideoCodec
+    chmod 0666 /dev/video0
+    chmod 0666 /dev/video1
+
+    # Create Goodix FP related directories
+    mkdir /data/gf_data 0700 system system
+    mkdir /data/system/gf_data 0700 system system
+    mkdir /data/images 0700 system system
+
+    # Set permissions for FPC FP
+    chown system  system /sys/bus/platform/devices/fpc_interrupt/clk_enable
+    chown system  system /sys/bus/platform/devices/fpc_interrupt/wakelock_enable
+    chown system  system /sys/bus/platform/devices/fpc_interrupt/irq
+    chown system  system /sys/bus/platform/devices/fpc_interrupt/irq_enable
+    chown system  system /sys/bus/platform/devices/fpc_interrupt/irq_unexpected
+    chmod 0200 /sys/bus/platform/devices/fpc_interrupt/irq_enable
+    chmod 0200 /sys/bus/platform/devices/fpc_interrupt/clk_enable
+    chmod 0200 /sys/bus/platform/devices/fpc_interrupt/wakelock_enable
+    chmod 0600 /sys/bus/platform/devices/fpc_interrupt/irq
+    chmod 0660 /sys/bus/platform/devices/fpc_interrupt/irq_unexpected
+    
+    rm /data/debug.logcat.txt
+    rm /data/debug.logcat.txt
+
+service debug_kernel /system/bin/sh -c "cat /proc/kmsg > /data/debug.kernel.txt"
+    class main
+    user root
+    oneshot
+
+service debug_logcat /system/bin/logcat -f /data/debug.logcat.txt -v threadtime *:E
+    class main
+    user root
+    group system
+
+
+service debug_properties /system/bin/sh -c "getprop > /data/debug.properties.txt"
+    class main
+    user root
+    oneshot
+
+service debug_roottree /system/bin/sh -c "ls -la / > /data/debug.roottree.txt"
+    class main
+    user root
+    oneshot
+
+on boot
+    # Set permission for Goodix FP
+    chown system system /dev/goodix_fp
+
+    # USB-OTG
+    chown system system /sys/class/power_supply/usb/otg_switch
+    chmod 0666 /sys/class/power_supply/usb/otg_switch
+
+    # Smart Charging
+    chown system system /sys/class/power_supply/battery/input_suspend
+    chown system system /sys/class/power_supply/battery/charging_enabled
+    chown system system /sys/class/power_supply/battery/mmi_charging_enable
+    chmod 0666 /sys/class/power_supply/battery/input_suspend
+    chmod 0666 /sys/class/power_supply/battery/charging_enabled
+    chmod 0666 /sys/class/power_supply/battery/mmi_charging_enable
+
+on property:sys.boot_completed=1
+    setprop vendor.oppo.biometrics.fingerprint.boot_completed 1
+
+# Performance profiles
+on property:persist.perf_profile=0
+    exec - root -- /system/bin/perf_profile.sh 0
+
+on property:persist.perf_profile=1
+    exec - root -- /system/bin/perf_profile.sh 1
+
+on property:persist.perf_profile=2
+    exec - root -- /system/bin/perf_profile.sh 2
+
+on property:sys.boot_completed=1
+    chown root root /sys/module/ged/parameters/gx_force_cpu_boost
+    chown root root /proc/cpufreq/cpufreq_power_mode
+    chown root root /proc/cpufreq/cpufreq_cci_mode
+
+   # Runtime fs tuning for runtime performance
+    write /sys/block/sda/queue/read_ahead_kb 512
+    write /sys/block/sda/queue/nr_requests 128
+    write /sys/block/sda/queue/iostats 1
+    write /sys/block/sdb/queue/read_ahead_kb 512
+    write /sys/block/sdb/queue/nr_requests 128
+    write /sys/block/sdb/queue/iostats 1
+    write /sys/block/sdc/queue/read_ahead_kb 512
+    write /sys/block/sdc/queue/nr_requests 128
+    write /sys/block/sdc/queue/iostats 1
+    write /sys/block/dm-0/queue/read_ahead_kb 128
+    write /sys/block/dm-1/queue/read_ahead_kb 128
+
+service oppo_fingerprints_sh /vendor/bin/sh /vendor/bin/init.oppo.fingerprints.sh
+    class main
+    user root
+    oneshot
+
+on early-init 
+    # Boost schedtune
+    write /dev/stune/schedtune.boost 50
+    write /dev/stune/schedtune.prefer_idle 1
+
+    # Boost I/O performance
+    write /sys/block/mmcblk0/queue/scheduler "noop"
+    write /sys/block/mmcblk0/queue/read_ahead_kb 2048
+    write /sys/block/mmcblk0/queue/nr_requests 256
+    write /sys/block/mmcblk0/queue/iostats 0
+
+on property:vendor.post_boot.parsed=1
+    # Restore default I/O tuning
+    write /sys/block/mmcblk0/queue/scheduler "cfq"
+    write /sys/block/mmcblk0/queue/nr_requests 128
+
+    # ZRAM setup
+    write /sys/block/zram0/comp_algorithm lz4
+    write /sys/block/zram0/max_comp_streams 8
+    write /proc/sys/vm/page-cluster 0
+
+on property:persist.vendor.radio.port_index=""
+    setprop sys.usb.config adb
